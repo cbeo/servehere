@@ -1,0 +1,99 @@
+#!/bin/sh
+#|-*- mode:lisp -*-|#
+#|
+exec ros -Q -- $0 "$@"
+|#
+(progn ;;init forms
+  (ros:ensure-asdf)
+  #+quicklisp(ql:quickload '(:lazybones :uiop :alexandria) :silent t)
+  )
+
+(defpackage :ros.script.servehere.3800439135
+  (:use :cl))
+(in-package :ros.script.servehere.3800439135)
+
+(defun mimetype-from-file (file)
+  (let ((ext (string-downcase (pathname-type file))))
+    (cond ((search ext "png jpg jpeg bmp gif")
+           (concatenate 'string "image/" ext))
+
+          ((equal "js" ext) "text/javascript")
+          ((equal "txt" ext) "text/plain")
+          ((equal "html" ext) "text/html")
+          ((equal "css" ext) "text/css")
+
+          (t "application/octet-stream"))))
+
+(defun serve-file (file)
+  (let* ((mimetype (mimetype-from-file file))
+         (file-getter (if (search "text" mimetype)
+                          (lambda ()  (uiop:read-file-string file))
+                          (lambda () (alexandria:read-file-into-byte-vector file)))))
+    (lambda (lzb:*req*)
+      (let ((lzb:*resp-headers*))
+        (lzb:http-ok mimetype (funcall file-getter))))))
+
+(defun add-file-route (path file)
+  (lzb::add-route (cons :get (split-sequence:split-sequence #\/ path))
+                  (serve-file file)))
+
+(defvar *files* nil)
+(defvar *needs-reload* nil)
+
+(defun serve-here ()
+  (let* ((cwd (uiop:getcwd))
+         (prefix-len (1- (length (namestring cwd)))))
+    (uiop:collect-sub*directories cwd
+     (constantly t)
+     (constantly t)
+     (lambda (dir)
+       (loop :for path :in (uiop:directory-files dir)
+          :when (not (member path *files* :test #'equal))
+          :do (progn
+                (push path *files*)
+                (setf *needs-reload* t)
+                (add-file-route (subseq (namestring path) prefix-len)
+                                path)))))))
+
+(defvar *port* 5000)
+
+(defun main (&rest argv)
+  (declare (ignorable argv))
+  (flet ((opt (key &key default (transform #'identity))
+           (if (cadr (member key argv :test #'equal))
+               (funcall transform (cadr (member key argv :test #'equal)))
+               default))
+         (switch (key) (member key argv :test #'equal))
+         (print-help ()
+           (princ "servehere [-p port] [-r refresh] [--help]")
+           (terpri)
+           (princ "the default port is 5000")
+           (terpri)
+           (princ "the default refresh rate is 5 seconds")
+           (terpri)))
+
+    (when (switch "--help")
+      (print-help)
+      (uiop:quit))
+
+    (handler-case
+        (progn 
+          (serve-here)
+          (setf *port* (opt "-p" :default 5000 :transform #'parse-integer))
+          (lzb:start :port *port*)
+          (setf *needs-reload* nil)
+          
+          (let ((refresh-cycle (opt "-r" :default 5 :transform #'parse-integer)))
+            (loop
+               (sleep refresh-cycle)
+               (serve-here)
+               (when *needs-reload*
+                 (setf *needs-reload* nil)
+                 (lzb:reload :port *port*)))))
+      (sb-sys:interactive-interrupt (c)
+        (declare (ignore c))
+        (lzb:stop)
+        (terpri)
+        (princ "Goodbye!")
+        (terpri)
+        (uiop:quit)))))
