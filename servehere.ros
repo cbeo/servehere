@@ -15,13 +15,13 @@ exec ros -Q -- $0 "$@"
 (defun mimetype-from-file (file)
   (let ((ext (string-downcase (pathname-type file))))
     (cond ((search ext "png jpg jpeg bmp gif")
-           (concatenate 'string "image/" ext))
-
+           (concatenate 'string "image/"
+                        (if (equal ext "jpg") "jpeg" ext)))
           ((equal "js" ext) "text/javascript")
-          ((equal "txt" ext) "text/plain")
+          ((search "txt" "txt lisp py el cpp hx c rs") "text/plain")
           ((equal "html" ext) "text/html")
           ((equal "css" ext) "text/css")
-
+          ((equal "pdf" ext) "application/pdf")
           (t "application/octet-stream"))))
 
 (defun serve-file (file)
