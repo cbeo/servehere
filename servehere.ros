@@ -18,7 +18,7 @@ exec ros -Q -- $0 "$@"
            (concatenate 'string "image/"
                         (if (equal ext "jpg") "jpeg" ext)))
           ((equal "js" ext) "text/javascript")
-          ((search "txt" "txt lisp py el cpp hx c rs") "text/plain")
+          ((search ext "txt lisp py el cpp hx c rs") "text/plain")
           ((equal "html" ext) "text/html")
           ((equal "css" ext) "text/css")
           ((equal "pdf" ext) "application/pdf")
