@@ -12,48 +12,11 @@ exec ros -Q -- $0 "$@"
   (:use :cl))
 (in-package :ros.script.servehere.3800439135)
 
-(defun mimetype-from-file (file)
-  (let ((ext (string-downcase (pathname-type file))))
-    (cond ((search ext "png jpg jpeg bmp gif")
-           (concatenate 'string "image/"
-                        (if (equal ext "jpg") "jpeg" ext)))
-          ((equal "js" ext) "text/javascript")
-          ((search ext "txt lisp py el cpp hx c rs") "text/plain")
-          ((equal "html" ext) "text/html")
-          ((equal "css" ext) "text/css")
-          ((equal "pdf" ext) "application/pdf")
-          (t "application/octet-stream"))))
-
-(defun serve-file (file)
-  (let* ((mimetype (mimetype-from-file file))
-         (file-getter (if (search "text" mimetype)
-                          (lambda ()  (uiop:read-file-string file))
-                          (lambda () (alexandria:read-file-into-byte-vector file)))))
-    (lambda (lzb:*req*)
-      (let ((lzb:*resp-headers*))
-        (lzb:http-ok mimetype (funcall file-getter))))))
-
-(defun add-file-route (path file)
-  (lzb::add-route (cons :get (split-sequence:split-sequence #\/ path))
-                  (serve-file file)))
-
 (defvar *files* nil)
 (defvar *needs-reload* nil)
 
 (defun serve-here ()
-  (let* ((cwd (uiop:getcwd))
-         (prefix-len (1- (length (namestring cwd)))))
-    (uiop:collect-sub*directories cwd
-     (constantly t)
-     (constantly t)
-     (lambda (dir)
-       (loop :for path :in (uiop:directory-files dir)
-          :when (not (member path *files* :test #'equal))
-          :do (progn
-                (push path *files*)
-                (setf *needs-reload* t)
-                (add-file-route (subseq (namestring path) prefix-len)
-                                path)))))))
+  (lzb:serve-directory "/" (uiop:getcwd)))
 
 (defvar *port* 5000)
 
@@ -83,6 +46,7 @@ exec ros -Q -- $0 "$@"
           (let ((refresh-cycle (opt "-r" :default 5 :transform #'parse-integer)))
             (loop
                (sleep refresh-cycle)
+               (format t "Checking for changed files...~%")
                (serve-here)
                (when *needs-reload*
                  (setf *needs-reload* nil)
