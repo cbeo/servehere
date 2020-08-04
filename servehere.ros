@@ -5,7 +5,7 @@ exec ros -Q -- $0 "$@"
 |#
 (progn ;;init forms
   (ros:ensure-asdf)
-  #+quicklisp(ql:quickload '(:lazybones :uiop :alexandria) :silent t)
+  #+quicklisp(ql:quickload '(:lazybones :uiop :alexandria :cl-ppcre) :silent t)
   )
 
 (defpackage :ros.script.servehere.3800439135
@@ -14,9 +14,22 @@ exec ros -Q -- $0 "$@"
 
 (defvar *files* nil)
 (defvar *needs-reload* nil)
+(defvar *regex-string* nil)
+
+(defun skip-p (path)
+  (and *regex-string*
+       (ppcre:scan *regex-string* (namestring path))))
+
+(defun filter-fn (path)
+  ;; abused a little to also check for new file routes
+  (unless (skip-p path)
+    (unless (member path *files* :test #'equal)
+      (push path *files*)
+      (setf *needs-reload* t))
+    path))
 
 (defun serve-here ()
-  (lzb:serve-directory "/" (uiop:getcwd)))
+  (lzb:serve-directory "/" (uiop:getcwd) :filter #'filter-fn))
 
 (defvar *port* 5000)
 
@@ -28,9 +41,10 @@ exec ros -Q -- $0 "$@"
                default))
          (switch (key) (member key argv :test #'equal))
          (print-help ()
-           (format t "servehere [-p port] [-r refresh] [--help]~%")
+           (format t "servehere [-p port] [-r refresh] [-x exclude] [--help]~%")
            (format t "The default port is 5000~%")
-           (format t "The default refresh rate is 5 seconds~%")))
+           (format t "The default refresh rate is 5 seconds~%")
+           (format t "Pass a regex string to -x to exclude matches~%")))
 
     (when (switch "--help")
       (print-help)
@@ -41,12 +55,11 @@ exec ros -Q -- $0 "$@"
           (serve-here)
           (setf *port* (opt "-p" :default 5000 :transform #'parse-integer))
           (lzb:start :port *port*)
-          (setf *needs-reload* nil)
+          (setf *regex-string* (opt "-x"))
           
           (let ((refresh-cycle (opt "-r" :default 5 :transform #'parse-integer)))
             (loop
                (sleep refresh-cycle)
-               (format t "Checking for changed files...~%")
                (serve-here)
                (when *needs-reload*
                  (setf *needs-reload* nil)
